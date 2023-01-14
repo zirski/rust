@@ -1,5 +1,6 @@
-use std::{env, fs};
-use chrono::*;
+use std::{env, fs::{File, read_to_string, self}, io::{Write, Read}};
+use chrono::{DateTime, NaiveDate, NaiveTime, Utc, NaiveDateTime, Duration};
+
 struct item {
     name: String,
     due_date: DateTime<Utc>,
@@ -7,7 +8,7 @@ struct item {
 }
 
 impl item {
-    fn new(name: &str, due_date: &str) -> item { //inputted date should follow YY DD MM format
+    fn new(name: &str, due_date: &str) { //inputted date should follow YY DD MM format
         let now = Utc::now();
         let inputs: Vec<i32> = due_date.split(" ")
                             .map(|x| x.parse::<i32>().unwrap())
@@ -23,7 +24,9 @@ impl item {
             time_left: now.signed_duration_since(dt),
         };
 
-        new_item
+        let file = File::options().append(true).open("todo_config.txt").unwrap();
+
+        
     }
 
     fn check(&mut self) {
@@ -34,7 +37,7 @@ impl item {
 }
 
 fn init_user() {
-    let mut entries = fs::read_dir(".").unwrap().collect::<Vec<_>>();
+    let entries = fs::read_dir(".").unwrap().collect::<Vec<_>>();
     let mut filenames: Vec<String> = Vec::new();
 
     for entry in entries {
@@ -43,11 +46,25 @@ fn init_user() {
 
     for v in filenames {
         if v == String::from("todo_config.txt") {
-            load_user();
+            load_config();
         } else {
             create_config();
         }
     }
+}
+
+fn create_config() {
+    let mut file = File::options()
+                        .append(true)
+                        .create(true)
+                        .open("todo_config.txt").unwrap();
+    
+    file.write_all(b"Items:").unwrap();                    
+}
+
+fn load_config() {
+    let lines:Vec<&str> = read_to_string("todo_config.txt").unwrap().lines().collect();
+    
 }
 
 fn main() {
