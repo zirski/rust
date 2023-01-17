@@ -1,5 +1,4 @@
-use core::panic;
-use std::{env, fs::{File, read_to_string}, io::{Write, ErrorKind}};
+use std::{env, fs::{File, read_to_string}, io::Write};
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc, NaiveDateTime};
 
 struct Item {
@@ -43,12 +42,33 @@ fn init() {
                         .write(true)
                         .open("todo_config.txt").unwrap();
     
-    file.write_all(b"Items:").unwrap();
+    file.write_all(b"Items:\n\n").unwrap();
 }
 
-fn load_config() {
-    let lines:Vec<&str> = read_to_string("todo_config.txt").unwrap().lines().collect();
+fn items_as_vec() -> Vec<Item> {
+    let file = read_to_string("todo_config.txt").unwrap();
+    let lines: Vec<&str> = file.lines().collect();
+    let mut items: Vec<Item> = Vec::new();
     
+    let parse_entry_and_create= |e: String| {
+        let entries: Vec<&str> = e.split(" ").collect();
+        let mut new_item = Item::build(String::from(entries[0]), String::from(entries[1]));
+        new_item.check();
+
+        new_item
+    };
+
+    for i in 0..(lines.len() / 3) {
+        if i == 0 {
+            let entry = lines[1].to_owned() + lines[2] + lines[3];
+            items.push(parse_entry_and_create(entry));
+        } else {
+            let entry = lines[i * 3 + 1].to_owned() + " " + lines[i * 3 + 2] + " " + lines[i * 3 + 3];
+            items.push(parse_entry_and_create(entry));
+        }
+    }
+
+    return items
 }
 
 fn main() {
@@ -57,18 +77,26 @@ fn main() {
 
     match &args[..] {
         [_, cmd, opt1, opt2] => match cmd.as_str() {
-                "-n" | "--new" => {
+                //add success message to cmd line for new entry
+            "-n" | "--new" => {
                 let item = Item::build(String::from(opt1), String::from(opt2));
                 
                 let mut file = File::options().append(true).open("todo_config.txt").unwrap();
-                let entry: String = "Item: ".to_owned() + &item.name + "\n\tDue Date: " + opt2 + "\n\tTime left: " + &item.time_left.to_string() + "\n";     
+                let entry: String = "[".to_owned() + &item.name + "]" + "\n\tDue Date: " + opt2 + "\n\tTime left: " + &item.time_left.to_string() + "\n";     
             
                 file.write_all(entry.as_bytes()).unwrap();
                 
             },
-            _ => println!("Error: argument format error"),
+            _ => println!("Error: wrong number of arguments"),
+                
+        }
+        _ => {
+            let list = items_as_vec();
+                
+            for i in 0..list.len() {
+                println!("{}: {} -> Due at {}", i + 1, list[i].name, list[i].due_date);
+            }
         },
-        _ => println!("Error: wrong number of arguments"),
-
+        
     }
 }
