@@ -1,72 +1,42 @@
-use std::{env, fs::{File, read_to_string}, io::Write};
-use chrono::{DateTime, NaiveDate, NaiveTime, Utc, NaiveDateTime};
+use std::{env, fs::{File, read_to_string}, io::{Write, ErrorKind}, collections::HashMap};
+use list::Item;
+pub mod list;
 const CONFIG_PATH: &'static str = "todo_items.txt";
 
-#[derive (Debug)]
-struct Item {
-    name: String,
-    due_date: DateTime<Utc>,
-    time_left: u64,
-}
-
-impl Item {
-
-    //inputted dates should be formatted as YYYY.MM.DD
-    fn build(name: String, due_date: String) -> Item { 
-        let now = Utc::now();
-        let inputs: Vec<i32> = due_date.split('.')
-                            .map(|x| x.parse::<i32>().unwrap()) //add error handling here
-                            .collect();
-        
-        println!("{}", due_date);
-
-        let d: NaiveDate = NaiveDate::from_ymd_opt(inputs[0], inputs[1] as u32, inputs[2] as u32).expect("Invalid Date");
-        let t: NaiveTime = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-        let dt: DateTime<Utc> = DateTime::from_utc(NaiveDateTime::new(d, t), Utc);
-    
-        let new_item = Item {
-            name: name.to_string(),
-            due_date: dt,
-            time_left: dt.signed_duration_since(now).to_std().unwrap().as_secs(),
-        };
-
-        new_item
-    }
-
-    fn check(&mut self) {
-        let now = Utc::now();
-
-        self.time_left = now.signed_duration_since(self.due_date).to_std().unwrap().as_secs();
-    }
-}
-
 fn init() {
-    let mut file = File::options()
-                        .create(true)
-                        .write(true)
-                        .open(CONFIG_PATH).unwrap();
-    
-    file.write_all(b"Items:\n").unwrap();
+    File::options().write(true)
+                    .open(CONFIG_PATH).unwrap_or_else(|x| {
+                        if x.kind() == ErrorKind::NotFound {
+                            let mut f = File::create(CONFIG_PATH).unwrap();
+                            f.write_all(b"Items:\n").unwrap(); f
+                        } else {
+                            panic!("Error creating the file")
+                        }
+                    });
 }
 
 // reads from todo_items.txt and returns the entries as a vector of Item objects, which is later parsed again to be read by the user
-fn items_as_vec() -> Vec<Item> {
-    let file = read_to_string(CONFIG_PATH).unwrap();
-    let lines: Vec<&str> = file.lines().collect();
+fn items_as_vec(str: &str) -> Vec<Item> {
+    let lines: Vec<&str> = str.lines().collect();
+    // .map(|l| return l[l.len() - 10..l.len() - 1])
     let mut items: Vec<Item> = Vec::new();
 
-    let to_date = |line: &str| -> String {
-        let date = line[11..14].to_owned() + &line[16..17] + &line[19..20];
-        date
-    };
+    for i in 1..lines.len() {
+        let chars: Vec<char> = lines[i].chars().collect();
+        let mut item_attr = HashMap::new();
+        
+        for j in 1..chars.len() {
+            if chars[j] == ']' {
+                item_attr.insert("name", (lines[i][1..j]).to_string());
+                item_attr.insert("y", (lines[i][(j + 2)..(j + 6)]).to_string());
+                item_attr.insert("m", (lines[i][(j + 7)..(j + 9)]).to_string());
+                item_attr.insert("d", (lines[i][(j + 10)..(j + 12)]).to_string());
+                break;
+            }
+        }
 
-    for i in 2..((lines.len()+ 1) / 2) {
-        let s = lines[i];
-        let len = s.len();
-        let name = &s[1..(len - 1)];
-        let date = to_date(lines[i + 1]);
-        let new_item = Item::build(name.to_string(), date);
-
+        let new_item = Item::build(item_attr.get("name").unwrap().to_string(), 
+                                        item_attr.get("y").unwrap().to_string() + "." + item_attr.get("m").unwrap() + "." + item_attr.get("d").unwrap());
         items.push(new_item);
     }
 
@@ -76,32 +46,31 @@ fn items_as_vec() -> Vec<Item> {
 fn main() {
     let args: Vec<String> = env::args().collect();
     init();
+    let mut file = File::options().append(true)
+                        .create(false)
+                        .open(CONFIG_PATH)
+                        .unwrap();
 
     match &args[..] {
         [_, cmd, opt1, opt2] => match cmd.as_str() {
                 //add success message to cmd line for new entry
             "-n" | "--new" => {
                 let item = Item::build(String::from(opt1), String::from(opt2));
-                let mut file = File::options().append(true)
-                                    .create(false)
-                                    .open(CONFIG_PATH)
-                                    .unwrap();
 
                 // evaluates whether the month is a single digit, and adds a zero to the start if it is; for ease in parsing later.
-                let month_eval = |opt: String| {
-                    let opt_date:Vec<&str> = opt.split('.').collect();
-                    if opt_date[1].len() == 1 {
-                        
-                        let month_with_zero = "0".to_owned() + &(opt_date[1]);
-                        let new_date: String = opt_date[0].to_owned() + "." + &month_with_zero + "." + opt_date[2];
-                        return new_date;
-                        
-                    } else {
-                        return opt;
+                let eval = |opt: String| {
+                    let mut opt_date:Vec<String> = opt.split('.').map(|x| x.parse::<String>().unwrap()).collect();
+                    
+                    for i in 1..opt_date.len() {
+                        if opt_date[i].len() == 1 {
+                            // let month_with_zero = "0".to_owned() + &(opt_date[1]);
+                            opt_date[i] = "0".to_owned() + &opt_date[i];
+                        }
                     }
+                    return opt_date.join("."); 
                 };
 
-                let entry: String = "[".to_owned() + &item.name + "]" + "\n\tDue Date: " + &month_eval(opt2.to_string()) + "\n";     
+                let entry: String = "[".to_owned() + &item.name + "] " + &eval(opt2.to_string()) + "\n";     
             
                 file.write_all(entry.as_bytes()).unwrap();
                 
@@ -111,10 +80,10 @@ fn main() {
         },
         [_, cmd] => match cmd.as_str() {
             "-l" | "--list" => {
-                let list = items_as_vec();
-                
+                let file_as_str = read_to_string(CONFIG_PATH).expect("Invalid File contents");
+                let list = items_as_vec(&file_as_str);
                 for i in 0..list.len() {
-                    println!("{}: {} -> Due at {}", i + 1, list[i].name, list[i].due_date);
+                    println!("{}: [{}]\t-> Due at {}", i + 1, list[i].name, list[i].due_date);
                 }
             },
             _ => println!("Not a valid argument")
@@ -122,5 +91,17 @@ fn main() {
 
         _ => println!("Wrong number of arguments"),
         
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn items_as_vec_length_test() {
+        let mut file = File::options().create(true).open("test.txt").unwrap();
+        file.write_all(b"Items:\n[test]\n\tDue Date: 2023.02.01\n[test]\n\ntDue Date: 2023.01.02)").unwrap();
+
+
     }
 }
