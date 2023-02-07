@@ -1,7 +1,15 @@
-use std::{env, fs::{File, read_to_string}, io::{Write, ErrorKind}, collections::HashMap};
+use std::{fmt, env, fs::{File, read_to_string}, io::{Write, ErrorKind}, collections::HashMap};
 use list::Item;
 pub mod list;
 const CONFIG_PATH: &'static str = "todo_items.txt";
+
+pub struct EmptyListError;
+
+impl fmt::Display for EmptyListError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Attempted to parse empty list")
+    }
+}
 
 fn init() {
     File::options().write(true)
@@ -16,7 +24,7 @@ fn init() {
 }
 
 // reads from todo_items.txt and returns the entries as a vector of Item objects, which is later parsed again to be read by the user
-fn items_as_vec(str: &str) -> Vec<Item> {
+fn items_as_vec(str: &str) -> Result<Vec<Item>, EmptyListError> {
     let lines: Vec<&str> = str.lines().collect();
     // .map(|l| return l[l.len() - 10..l.len() - 1])
     let mut items: Vec<Item> = Vec::new();
@@ -34,13 +42,16 @@ fn items_as_vec(str: &str) -> Vec<Item> {
                 break;
             }
         }
+        if item_attr.len() == 0 {
+            return Err(EmptyListError);
+        }
 
         let new_item = Item::build(item_attr.get("name").unwrap().to_string(), 
                                         item_attr.get("y").unwrap().to_string() + "." + item_attr.get("m").unwrap() + "." + item_attr.get("d").unwrap());
         items.push(new_item);
     }
 
-    return items
+    Ok(items)
 }
 
 fn main() {
@@ -81,10 +92,15 @@ fn main() {
         [_, cmd] => match cmd.as_str() {
             "-l" | "--list" => {
                 let file_as_str = read_to_string(CONFIG_PATH).expect("Invalid File contents");
-                let list = items_as_vec(&file_as_str);
-                for i in 0..list.len() {
-                    println!("{}: [{}]\t-> Due at {}", i + 1, list[i].name, list[i].due_date);
-                }
+                match items_as_vec(&file_as_str) {
+                    Ok(vec) => {
+                        for i in 0..vec.len() {
+                            println!("{}: [{}]\t-> Due at {}", i + 1, vec[i].name, vec[i].due_date);
+                        }
+                    },
+                    Err(_) => println!("No items to display")
+                };
+
             },
             _ => println!("Not a valid argument")
         },
